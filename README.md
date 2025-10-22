@@ -6,7 +6,7 @@
 
 Source Code - TCPClientServer folder
 
-#### Version 1
+#### Version 1 - Single Thread
 ---------
 
 A Simple TCP Client and Server
@@ -77,44 +77,46 @@ When this line executes 3 things will happen
 
 **TCPClient Side**
 
-1. On server code, `server.setKeepAlive(true);` this keeps the TCP connection open
+1. `server.setKeepAlive(true);` this keeps the TCP connection open - check above for all use cases.
 2. TCP 3-way hanshake happens : When the below client code executes, then the 3-way handshake happens
 
 ```code
-    client.connect(new InetSocketAddress(LOCALHOST, PORT));
+client.connect(new InetSocketAddress(LOCALHOST, PORT));
 ```
+3. this triggers a system call
+4. Client Kernel send SYN packet to server and this get added to the Server's SYN Queue. Now client is in SYN_SENT state
+5. Server send SYN+ACK (received)
+6. Client send ACK and the connection is established now and this is stored in Server's ACCEPT Queue
+7. Client received connect()
+8. Server ```accept()``` is in blocking state and ready to accept connections
+9. Data can be exchanged
+
+**Client State Transitions**
+
+```CLOSED → connect() → SYN_SENT → (SYN-ACK received) → ESTABLISHED```
+
 ```text
 Client (App)            Client Kernel          Server Kernel           Server (App)
    | connect()                |                      |                        |
-   |----------------SYN------>|                      |                        |
+   |--------system call------>|                      |                        |
    |                          |------SYN------------>|                        |
    |                          |<-----SYN-ACK---------|                        |
-   |<-------SYN-ACK-----------|                      |                        |
-   |---------ACK------------->|------ACK------------>|                        |
+   |                          |------ACK------------>|                        |
+   | connect() returns        |                      |                        |
+   |                          |                      |                        |
    | [Handshake complete]     | [Conn established]   | [Conn established]     |
-   |----------------------DATA FLOW------------------------------------------>|
+   |----------------------DATA EXCHANGE------------------------------------------>|
 ```
 
-
-
+**Common Client-Side Issues:**
+* Connection timeout: Server not responding to SYN
+* Connection refused: No process listening on target port
+* Firewall blocking: SYN packets being dropped
+* Network unreachable: Cannot route to destination
 
 #### Version 2
 ---------
-
-#### TCP Connection Lifecycle (Client ↔ Server)
-```text
-Client                  Network/Kernel                 Server
-  | ---- SYN ------------> |                              |
-  | <--- SYN-ACK --------- |                              |
-  | ---- ACK ------------> |                              |
-  |                        | <--- accept() returns Socket |
-  |                        | --> Executor thread handles I/O
-  |=====> data exchange via established TCP connection ===>|
-  | ---- FIN ------------> |                              |
-  | <--- ACK ------------- |                              |
-  | <--- FIN ------------- |                              |
-  | ---- ACK ------------> |                              |
-```
+// TODO
 
 
 ## Network Protocols
