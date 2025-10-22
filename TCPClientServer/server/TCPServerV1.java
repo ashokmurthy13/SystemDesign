@@ -14,6 +14,7 @@ public class TCPServerV1 {
         try {
             serverSock = new ServerSocket(PORT);
             server = serverSock.accept();
+            server.setKeepAlive(true);
             InputStream inputStream = server.getInputStream();
             BufferedReader bReader = new BufferedReader(new InputStreamReader(inputStream));
             String line;
