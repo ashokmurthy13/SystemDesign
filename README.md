@@ -21,7 +21,64 @@ A Simple TCP Client and Server
 
 #### Behind the Scenes
 
-1. TCP 3-way hanshake happens : When the below client code executes, then the 3-way handshake happens
+**TCPServer Side**
+
+```ServerSocket serverSocket = new ServerSocket(5000);```
+
+When this line executes 3 things will happen  
+  * bind() call will trigger to associate the socket with a specific IP address and port - happends on the Transport Layer on Server OS Kernel's Network stack. initially in TCP_CLOSE state; after listen(), transitions to TCP_LISTEN
+  * listen() call will trigger - this creates 2 queues
+    * SYN Queue (incomplete connections) to store connections with SYN received but 3-way handshake not completed - SYN_RECV state
+    * ACCEPT Queue (estalished connections) to store connections with completed 3-way handshake waiting for accept()
+    * socket moves from TCP_CLOSE to TCP_LISTEN state
+    * Backlog parameter - sets maximum lenght for accept queue
+  * Now the server socket's accept() is in blocking and waiting for connections from accept queue
+
+```
+  // Keep-alive is set on the ACCEPTED sockets (Client), not the listening ServerSocket
+  Socket acceptedSocket = serverSocket.accept();
+  acceptedSocket.setKeepAlive(true);
+```
+* if keep-alive set to ```true``` and the socket is ```not closed``` in the code
+    * If the program is still running, then the TCP layer in the OS Kernel network stack will do the following
+      * there is an idle time (2 hours in MacOS), after 2 hours it sends keep-alive probe
+      * by default it sends 9 probes each at 75s interval
+      * if there is no peer response, then the kernel closes socket connection and notifies the app, returns -1 or IOException
+* if keep-alive set to ```true``` or ```false``` and the socket is ```closed``` or ```not closed``` in the code - ```serverSocket.close()```
+    * Once the JVM exists, then the underlying TCP connection will be closed smoothly
+    * ALL sockets are automatically closed by the OS (sends FIN/RST)
+* if keep-alive set to ```false``` which is default and the socket is ```not closed``` in the code\
+    * OS Kernel never send probes
+    * the connection can remain "ESTABLISHED" in kernel forever if:
+      * No FIN(= graceful close) or RST(abrupt close - when app exits ungracefully) is exchaged
+      * No data is being send or received
+    * this leads to following issues
+      * Memeory Waste - TCP state, buffer, kernel structure remain allocated
+      * Resource Leaks - file descriptors remain open (lsof would show it)
+      * Hung Read/Writes - app can block indefinitely, waiting for peer that’s long gone
+
+**PROD Tips**
+
+* Explicit close in code (try-with-resources or finally),
+* Keepalive enabled for safety,
+* Application-level timeouts (heartbeats, idle timers).
+
+**Keep-Alive Default Timings (Vary by OS)**
+* Linux: Typically 2 hours idle, then 9 probes every 75 seconds
+* Windows: 2 hours idle, variable retries
+* macOS: Similar to Linux but configurable
+
+**Key Points:**
+* ServerSocket vs Socket: ServerSocket is for listening, Socket is for actual connections
+* JVM Exit: Always triggers socket cleanup regardless of keep-alive settings
+* Resource Leaks: Only happen when JVM keeps running but application doesn't close sockets
+* Detection: Use netstat -an | grep ESTABLISHED or lsof -i TCP:5000 to find leaked connections
+
+
+**TCPClient Side**
+
+1. On server code, `server.setKeepAlive(true);` this keeps the TCP connection open
+2. TCP 3-way hanshake happens : When the below client code executes, then the 3-way handshake happens
 
 ```code
     client.connect(new InetSocketAddress(LOCALHOST, PORT));
@@ -37,7 +94,6 @@ Client (App)            Client Kernel          Server Kernel           Server (A
    | [Handshake complete]     | [Conn established]   | [Conn established]     |
    |----------------------DATA FLOW------------------------------------------>|
 ```
-2. On server code, `server.setKeepAlive(true);` this keeps the TCP connection open
 
 
 
@@ -63,11 +119,16 @@ Client                  Network/Kernel                 Server
 
 ## Network Protocols
 
-Application Layer (L7)  : [User Space] HTTP, SSH (Hyper-Text Transfer Protocol) (HTTP is a spec and there are implementations like one in Java lib - HttpURLConnection).\
-Transport Layer(L4)     : [Kernel] TCP, UDP (Transmission Control Protocol) (TCP is implemented in every OS Kernel on the Network stack). Assign a Port(source, destination) to the TCP Segments.\
-Network Layer(L3)       : [Kernel] IP, ICMP, ARP (IP is implemented in every OS Kernel on the Network stack). Attaches the IP address to the above IP Packets and takes care of routing.\
-Data Link Layer(L2)     : Softwares. All the network drivers used by the devices on phsycical layer are available. MAC Addressing and data is called Frames here.\
-Physical Layer(L1)      : Hardwares. NIC, Ethernet cable or WiFi devices are used to trasmit the data. Data is sent as signals here.\
+Application Layer (L7)  : [User Space] HTTP, SSH (Hyper-Text Transfer Protocol) (HTTP is a spec and there are implementations like one in Java lib - HttpURLConnection).
+
+Transport Layer(L4)     : [Kernel] TCP, UDP (Transmission Control Protocol) (TCP is implemented in every OS Kernel on the Network stack). Assign a Port(source, destination) to the TCP Segments.
+
+Network Layer(L3)       : [Kernel] IP, ICMP, ARP (IP is implemented in every OS Kernel on the Network stack). Attaches the IP address to the above IP Packets and takes care of routing.
+
+Data Link Layer(L2)     : Softwares. All the network drivers used by the devices on phsycical layer are available. MAC Addressing and data is called Frames here.
+
+Physical Layer(L1)      : Hardwares. NIC, Ethernet cable or WiFi devices are used to trasmit the data. Data is sent as signals here.
+
 
 -> So every network-capable OS includes TCP/IP.\
 -> User apps at Application Layer talk to TCP/IP through socket APIs (like socket(), send(), recv()).\
