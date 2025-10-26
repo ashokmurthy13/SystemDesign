@@ -3,17 +3,33 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.*;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 public class TCPServerV2 {
 
     private static final int PORT = 8080;
+    private static final String threadPoolName = "TCPClientServerThreads";
 
     public static void main(String... args) throws InterruptedException {
 
-        ExecutorService executorService = Executors.newFixedThreadPool(5);
+        ThreadFactory threadFactory = new ThreadFactory() {
+
+            @Override
+            public Thread newThread(Runnable r) {
+                Thread thread = new Thread(r);
+                thread.setName(threadPoolName + "-" + thread.getId());
+                thread.setPriority(5);
+                thread.setDaemon(true);
+                return thread;
+            }
+        };
+
+        ExecutorService executorService = new ThreadPoolExecutor(5, 10, 10, TimeUnit.SECONDS , new ArrayBlockingQueue<>(50), threadFactory);
 
         ServerSocket serverSock = null;
         try {
